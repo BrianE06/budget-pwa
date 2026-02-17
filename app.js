@@ -189,7 +189,19 @@ function renderRatioPie(txs){
   renderLegend('legendRatio', labels, values);
 }
 
-function renderTxList(txs){
+function renderTxList(txs)
+
+async function refreshUI(){
+  const all = await getAllTx();
+  const txs = filterTxByMonth(all);
+
+  $('status').textContent = `Saved transactions (on this phone): ${all.length} | Showing: ${txs.length}`;
+
+  renderExpensesPie(txs);
+  renderDepositsPie(txs);
+  renderRatioPie(txs);
+
+   function renderTxList(txs){
   txs.sort((a,b)=> (b.date||'').localeCompare(a.date||''));
   const html = `
     <table>
@@ -227,65 +239,6 @@ function renderTxList(txs){
       await refreshUI();
     };
   });
-}
-
-async function refreshUI(){
-  const all = await getAllTx();
-  const txs = filterTxByMonth(all);
-
-  $('status').textContent = `Saved transactions (on this phone): ${all.length} | Showing: ${txs.length}`;
-
-  renderExpensesPie(txs);
-  renderDepositsPie(txs);
-  renderRatioPie(txs);
-
-   function renderTxList(txs){
-  txs.sort((a,b)=> (b.date||'').localeCompare(a.date||''));
-
-  const html = `
-    <table>
-      <thead>
-        <tr>
-          <th>Date</th><th>Merchant</th><th>Category</th><th>Type</th><th>Amount</th><th>Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${txs.slice(0,60).map(t=>`
-          <tr>
-            <td>${t.date}</td>
-            <td>${t.merchant || ''}</td>
-            <td>
-              <select class="catSel" data-id="${t.id}">
-                ${CATEGORIES.map(c => `<option value="${c}" ${c===t.category?'selected':''}>${c}</option>`).join('')}
-              </select>
-            </td>
-            <td>${t.type}</td>
-            <td>${t.type==='expense' ? '-' : '+'}${fmt(t.amount)}</td>
-            <td style="white-space:nowrap;">
-              <button class="saveBtn" data-id="${t.id}">Save</button>
-              <button class="delBtn" data-id="${t.id}">Delete</button>
-            </td>
-          </tr>
-        `).join('')}
-      </tbody>
-    </table>`;
-
-  $('txList').innerHTML = html;
-
-  // Save category edits
-  document.querySelectorAll('.saveBtn').forEach(btn => {
-    btn.onclick = async () => {
-      const id = Number(btn.dataset.id);
-      const sel = document.querySelector(`.catSel[data-id="${id}"]`);
-      if (!sel) return;
-
-      const tx = await db.get('tx', id);
-      if (!tx) return;
-
-      tx.category = sel.value;
-      await db.put('tx', tx);
-      await refreshUI();
-    };
   });
 
   // Delete
