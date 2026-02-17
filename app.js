@@ -22,6 +22,32 @@ function pct(value, total){
   return ((value / total) * 100).toFixed(1) + "%";
 }
 
+// ===== TOTALS HELPERS =====
+function sumByType(txs, type){
+  return txs.filter(t => t.type === type)
+            .reduce((s,t)=>s+Number(t.amount),0);
+}
+
+function setMoney(id, value){
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = money(value);
+}
+
+function setText(id, value){
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = value;
+}
+
+function setNetStyle(el, net){
+  if (!el) return;
+  el.style.fontWeight = "700";
+  el.style.color = net > 0 ? "#0a7a2f"
+                : net < 0 ? "#b00020"
+                : "#444";
+}
+
 // Stable color from label
 function colorForLabel(label){
   let h = 0;
@@ -158,6 +184,29 @@ function createSmallPie(chartRef, canvasId, labels, values){
   });
 }
 
+// ===== TOTALS RENDER =====
+function renderTotals(txs){
+  const deposits = sumByType(txs, 'income');
+  const expenses = sumByType(txs, 'expense');
+  const net = deposits - expenses;
+
+  setMoney('totalDeposits', deposits);
+  setMoney('totalExpenses', expenses);
+
+  const netEl = document.getElementById('totalNet');
+  if (netEl) {
+    netEl.textContent =
+      (net >= 0 ? "+" : "-") + money(Math.abs(net));
+    setNetStyle(netEl, net);
+  }
+
+  const rate = deposits > 0
+    ? (expenses / deposits * 100)
+    : 0;
+
+  setText('spendRate', rate.toFixed(1) + "%");
+}
+
 function renderExpensesPie(txs){
   const data = groupSpendByCategory(txs);
   const labels = data.map(x=>x[0]);
@@ -248,6 +297,8 @@ function renderTxList(txs){
 async function refreshUI(){
   const all = await getAllTx();
   const txs = filterTxByMonth(all);
+  
+  renderTotals(txs);
 
   $('status').textContent = `Saved transactions (on this phone): ${all.length} | Showing: ${txs.length}`;
 
