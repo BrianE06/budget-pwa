@@ -1,0 +1,66 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Budget PWA</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="theme-color" content="#111111" />
+  <style>
+    body { font-family: -apple-system, system-ui, Arial; margin: 16px; }
+    .row { display:flex; gap:10px; flex-wrap:wrap; }
+    input, select, button { font-size:16px; padding:10px; }
+    button { cursor:pointer; }
+    .card { border:1px solid #ddd; border-radius:12px; padding:12px; margin:12px 0; }
+    #status { color:#555; }
+    table { width:100%; border-collapse: collapse; }
+    td, th { padding:8px; border-bottom:1px solid #eee; text-align:left; }
+  </style>
+</head>
+<body>
+  <h2>Budget Tracker (Local + OCR)</h2>
+  <div id="status">Loading…</div>
+
+  <div class="card">
+    <h3>Add transaction</h3>
+    <div class="row">
+      <input id="date" type="date" />
+      <select id="type">
+        <option value="expense">Expense</option>
+        <option value="income">Income</option>
+      </select>
+      <input id="amount" type="number" step="0.01" placeholder="Amount" />
+      <input id="merchant" placeholder="Merchant" />
+      <select id="category"></select>
+      <button id="addBtn">Add</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Import from screenshot (OCR)</h3>
+    <p>Upload a screenshot where each line looks like: <b>MM/DD Merchant -12.34</b> (or similar).</p>
+    <input id="imgInput" type="file" accept="image/*" />
+    <div class="row">
+      <button id="ocrBtn">Run OCR</button>
+      <button id="importBtn" disabled>Import parsed rows</button>
+    </div>
+    <p id="ocrStatus"></p>
+    <div id="preview"></div>
+  </div>
+
+  <div class="card">
+    <h3>Spending (Pie)</h3>
+    <canvas id="pie" height="220"></canvas>
+  </div>
+
+  <div class="card">
+    <h3>Recent transactions</h3>
+    <div id="txList"></div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/idb@8/build/umd.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
