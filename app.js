@@ -9,7 +9,7 @@ const CATEGORIES = [
 
 const { openDB } = idb;
 
-let db, pieChart;
+let db, pieExpensesChart, pieDepositsChart, pieRatioChart;
 let parsedRows = []; // OCR preview rows
 
 function $(id){ return document.getElementById(id); }
@@ -58,16 +58,64 @@ function groupSpendByCategory(txs){
   return [...map.entries()].sort((a,b)=>b[1]-a[1]);
 }
 
-function renderPie(txs){
+function groupByMerchant(txs, type){
+  const map = new Map();
+  txs.filter(t => t.type === type).forEach(t => {
+    const key = (t.merchant && t.merchant.trim()) ? t.merchant.trim() : 'Unknown';
+    map.set(key, (map.get(key) || 0) + Number(t.amount));
+  });
+  return [...map.entries()].sort((a,b)=>b[1]-a[1]);
+}
+
+function renderExpensesPie(txs){
   const data = groupSpendByCategory(txs);
   const labels = data.map(x=>x[0]);
   const values = data.map(x=>x[1]);
 
-  const ctx = $('pie');
-  if (pieChart) pieChart.destroy();
-  pieChart = new Chart(ctx, {
+  const ctx = document.getElementById('pieExpenses');
+  if (pieExpensesChart) pieExpensesChart.destroy();
+
+  pieExpensesChart = new Chart(ctx, {
     type: 'pie',
     data: { labels, datasets: [{ data: values }] },
+    options: { plugins: { legend: { position: 'bottom' } } }
+  });
+}
+
+function renderDepositsPie(txs){
+  // Income grouped by merchant. If you prefer category, I can swap it.
+  const data = groupByMerchant(txs, 'income').slice(0, 15); // top 15 to keep readable
+  const labels = data.map(x=>x[0]);
+  const values = data.map(x=>x[1]);
+
+  const ctx = document.getElementById('pieDeposits');
+  if (pieDepositsChart) pieDepositsChart.destroy();
+
+  pieDepositsChart = new Chart(ctx, {
+    type: 'pie',
+    data: { labels, datasets: [{ data: values }] },
+    options: { plugins: { legend: { position: 'bottom' } } }
+  });
+}
+
+function renderRatioPie(txs){
+  const totalExpenses = txs
+    .filter(t => t.type === 'expense')
+    .reduce((sum, t) => sum + Number(t.amount), 0);
+
+  const totalDeposits = txs
+    .filter(t => t.type === 'income')
+    .reduce((sum, t) => sum + Number(t.amount), 0);
+
+  const ctx = document.getElementById('pieRatio');
+  if (pieRatioChart) pieRatioChart.destroy();
+
+  pieRatioChart = new Chart(ctx, {
+    type: 'pie',
+    data: {
+      labels: ['Expenses', 'Deposits'],
+      datasets: [{ data: [totalExpenses, totalDeposits] }]
+    },
     options: { plugins: { legend: { position: 'bottom' } } }
   });
 }
@@ -95,7 +143,10 @@ function renderTxList(txs){
 async function refreshUI(){
   const txs = await getAllTx();
   $('status').textContent = `Saved transactions: ${txs.length} (stored only on this phone)`;
-  renderPie(txs);
+  renderExpensesPie(txs);
+  renderDepositsPie(txs);
+  renderRatioPie(txs);
+  
   renderTxList(txs);
 }
 
