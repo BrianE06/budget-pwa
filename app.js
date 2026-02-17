@@ -117,57 +117,76 @@ function groupByMerchant(txs, type){
   return [...map.entries()].sort((a,b)=>b[1]-a[1]);
 }
 
+function createSmallPie(chartRef, canvasId, labels, values){
+  const ctx = document.getElementById(canvasId);
+  if (!ctx) return chartRef;
+  if (chartRef) chartRef.destroy();
+
+  const bg = labels.map(colorForLabel);
+  const total = values.reduce((a,b)=>a+b,0);
+
+  return new Chart(ctx, {
+    type: 'pie',
+    data: { labels, datasets: [{ data: values, backgroundColor: bg }] },
+    options: {
+      responsive: false,
+      plugins: {
+        legend: { display: false }, // we render our own legend w/ $ + %
+        tooltip: {
+          enabled: true,
+          callbacks: {
+            label: (item) => {
+              const v = item.raw ?? 0;
+              return `${item.label}: ${money(v)} (${pct(v,total)})`;
+            }
+          }
+        },
+        datalabels: {
+          color: "#fff",
+          font: { weight: "700", size: 10 },
+          formatter: (value) => pct(value, total),
+        }
+      }
+    }
+  });
+}
+
 function renderExpensesPie(txs){
   const data = groupSpendByCategory(txs);
   const labels = data.map(x=>x[0]);
   const values = data.map(x=>x[1]);
 
-  const ctx = document.getElementById('pieExpenses');
-  if (pieExpensesChart) pieExpensesChart.destroy();
+  pieExpensesChart = createSmallPie(pieExpensesChart, 'pieExpenses', labels, values);
+  renderLegend('legendExpenses', labels, values);
+}
 
-  pieExpensesChart = new Chart(ctx, {
-    type: 'pie',
-    data: { labels, datasets: [{ data: values }] },
-    options: { plugins: { legend: { position: 'bottom' } } }
+function groupByMerchant(txs, type){
+  const map = new Map();
+  txs.filter(t => t.type === type).forEach(t => {
+    const key = (t.merchant && t.merchant.trim()) ? t.merchant.trim() : 'Unknown';
+    map.set(key, (map.get(key) || 0) + Number(t.amount));
   });
+  return [...map.entries()].sort((a,b)=>b[1]-a[1]);
 }
 
 function renderDepositsPie(txs){
-  // Income grouped by merchant. If you prefer category, I can swap it.
-  const data = groupByMerchant(txs, 'income').slice(0, 15); // top 15 to keep readable
+  const data = groupByMerchant(txs, 'income').slice(0, 12);
   const labels = data.map(x=>x[0]);
   const values = data.map(x=>x[1]);
 
-  const ctx = document.getElementById('pieDeposits');
-  if (pieDepositsChart) pieDepositsChart.destroy();
-
-  pieDepositsChart = new Chart(ctx, {
-    type: 'pie',
-    data: { labels, datasets: [{ data: values }] },
-    options: { plugins: { legend: { position: 'bottom' } } }
-  });
+  pieDepositsChart = createSmallPie(pieDepositsChart, 'pieDeposits', labels, values);
+  renderLegend('legendDeposits', labels, values);
 }
 
 function renderRatioPie(txs){
-  const totalExpenses = txs
-    .filter(t => t.type === 'expense')
-    .reduce((sum, t) => sum + Number(t.amount), 0);
+  const totalExpenses = txs.filter(t => t.type === 'expense').reduce((s,t)=>s+Number(t.amount),0);
+  const totalDeposits = txs.filter(t => t.type === 'income').reduce((s,t)=>s+Number(t.amount),0);
 
-  const totalDeposits = txs
-    .filter(t => t.type === 'income')
-    .reduce((sum, t) => sum + Number(t.amount), 0);
+  const labels = ['Expenses', 'Deposits'];
+  const values = [totalExpenses, totalDeposits];
 
-  const ctx = document.getElementById('pieRatio');
-  if (pieRatioChart) pieRatioChart.destroy();
-
-  pieRatioChart = new Chart(ctx, {
-    type: 'pie',
-    data: {
-      labels: ['Expenses', 'Deposits'],
-      datasets: [{ data: [totalExpenses, totalDeposits] }]
-    },
-    options: { plugins: { legend: { position: 'bottom' } } }
-  });
+  pieRatioChart = createSmallPie(pieRatioChart, 'pieRatio', labels, values);
+  renderLegend('legendRatio', labels, values);
 }
 
 function renderTxList(txs){
@@ -211,13 +230,75 @@ function renderTxList(txs){
 }
 
 async function refreshUI(){
-  const txs = await getAllTx();
-  $('status').textContent = `Saved transactions: ${txs.length} (stored only on this phone)`;
+  const all = await getAllTx();
+  const txs = filterTxByMonth(all);
+
+  $('status').textContent = `Saved transactions (on this phone): ${all.length} | Showing: ${txs.length}`;
+
   renderExpensesPie(txs);
   renderDepositsPie(txs);
   renderRatioPie(txs);
-  
-  renderTxList(txs);
+
+   function renderTxList(txs){
+  txs.sort((a,b)=> (b.date||'').localeCompare(a.date||''));
+
+  const html = `
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th><th>Merchant</th><th>Category</th><th>Type</th><th>Amount</th><th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${txs.slice(0,60).map(t=>`
+          <tr>
+            <td>${t.date}</td>
+            <td>${t.merchant || ''}</td>
+            <td>
+              <select class="catSel" data-id="${t.id}">
+                ${CATEGORIES.map(c => `<option value="${c}" ${c===t.category?'selected':''}>${c}</option>`).join('')}
+              </select>
+            </td>
+            <td>${t.type}</td>
+            <td>${t.type==='expense' ? '-' : '+'}${fmt(t.amount)}</td>
+            <td style="white-space:nowrap;">
+              <button class="saveBtn" data-id="${t.id}">Save</button>
+              <button class="delBtn" data-id="${t.id}">Delete</button>
+            </td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>`;
+
+  $('txList').innerHTML = html;
+
+  // Save category edits
+  document.querySelectorAll('.saveBtn').forEach(btn => {
+    btn.onclick = async () => {
+      const id = Number(btn.dataset.id);
+      const sel = document.querySelector(`.catSel[data-id="${id}"]`);
+      if (!sel) return;
+
+      const tx = await db.get('tx', id);
+      if (!tx) return;
+
+      tx.category = sel.value;
+      await db.put('tx', tx);
+      await refreshUI();
+    };
+  });
+
+  // Delete
+  document.querySelectorAll('.delBtn').forEach(btn => {
+    btn.onclick = async () => {
+      const id = Number(btn.dataset.id);
+      if (!Number.isFinite(id)) return;
+      if (!confirm("Delete this transaction?")) return;
+      await db.delete('tx', id);
+      await refreshUI();
+    };
+  });
+}
 }
 
 // ---------- OCR + parsing ----------
@@ -323,6 +404,9 @@ function renderPreview(rows){
 // UI wiring
 (async function main(){
   await initDB();
+  if (window.ChartDataLabels) {
+  Chart.register(ChartDataLabels);
+}
   fillCategories();
   $('date').value = todayISO();
   $('status').textContent = 'Ready.';
@@ -330,6 +414,13 @@ function renderPreview(rows){
 
   $('addBtn').onclick = async () => {
     const d = $('date').value;
+    // Month filter defaults
+const now = new Date();
+const mm = String(now.getMonth()+1).padStart(2,'0');
+document.getElementById('monthFilter').value = `${now.getFullYear()}-${mm}`;
+
+document.getElementById('monthFilter').addEventListener('change', refreshUI);
+document.getElementById('showAll').addEventListener('change', refreshUI);
     const type = $('type').value;
     const amount = Number($('amount').value);
     const merchant = $('merchant').value || '';
