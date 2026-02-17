@@ -14,6 +14,56 @@ let parsedRows = []; // OCR preview rows
 
 function $(id){ return document.getElementById(id); }
 function fmt(n){ return `$${Number(n).toFixed(2)}`; }
+function money(n){ return `$${Number(n).toFixed(2)}`; }
+
+function pct(value, total){
+  if (!total) return "0.0%";
+  return ((value / total) * 100).toFixed(1) + "%";
+}
+
+// stable color from a label (category/merchant)
+function colorForLabel(label){
+  let h = 0;
+  const s = String(label);
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  const hue = h % 360;
+  return `hsl(${hue} 70% 45%)`;
+}
+
+function filterTxByMonth(txs){
+  const showAll = document.getElementById('showAll')?.checked;
+  const month = document.getElementById('monthFilter')?.value; // YYYY-MM
+  if (showAll || !month) return txs;
+  return txs.filter(t => (t.date || "").startsWith(month));
+}
+
+function renderLegend(divId, labels, values){
+  const div = document.getElementById(divId);
+  const total = values.reduce((a,b)=>a+b,0);
+
+  const rows = labels.map((lab, i) => {
+    const v = values[i];
+    const c = colorForLabel(lab);
+    return `
+      <tr>
+        <td><span class="dot" style="background:${c}"></span>${lab}</td>
+        <td style="text-align:right;">${money(v)}</td>
+        <td style="text-align:right; color:#666;">${pct(v,total)}</td>
+      </tr>`;
+  }).join('');
+
+  div.innerHTML = `
+    <table class="legendTable">
+      <thead>
+        <tr>
+          <td><b>Label</b></td>
+          <td style="text-align:right;"><b>$</b></td>
+          <td style="text-align:right;"><b>%</b></td>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
 
 async function initDB(){
   db = await openDB('budget-db', 1, {
