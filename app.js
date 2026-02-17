@@ -1,0 +1,257 @@
+// Register service worker (offline)
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js');
+
+const CATEGORIES = [
+  "Rent/Mortgage","Utilities","Groceries","Dining","Gas/Transport","Car",
+  "Insurance","Medical","Subscriptions","Shopping","Entertainment","Travel",
+  "Debt","Savings/Investing","Income","Transfer","Other"
+];
+
+const { openDB } = idb;
+
+let db, pieChart;
+let parsedRows = []; // OCR preview rows
+
+function $(id){ return document.getElementById(id); }
+function fmt(n){ return `$${Number(n).toFixed(2)}`; }
+
+async function initDB(){
+  db = await openDB('budget-db', 1, {
+    upgrade(db){
+      const store = db.createObjectStore('tx', { keyPath: 'id', autoIncrement: true });
+      store.createIndex('byDate', 'date');
+    }
+  });
+}
+
+function fillCategories(){
+  const sel = $('category');
+  CATEGORIES.forEach(c => {
+    const o = document.createElement('option');
+    o.value = c; o.textContent = c;
+    sel.appendChild(o);
+  });
+  sel.value = "Groceries";
+}
+
+function todayISO(){
+  const d = new Date();
+  const m = String(d.getMonth()+1).padStart(2,'0');
+  const day = String(d.getDate()).padStart(2,'0');
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
+async function addTx(tx){
+  await db.add('tx', tx);
+  await refreshUI();
+}
+
+async function getAllTx(){
+  return await db.getAll('tx');
+}
+
+function groupSpendByCategory(txs){
+  const map = new Map();
+  txs.filter(t=>t.type==='expense').forEach(t=>{
+    map.set(t.category, (map.get(t.category)||0) + Number(t.amount));
+  });
+  return [...map.entries()].sort((a,b)=>b[1]-a[1]);
+}
+
+function renderPie(txs){
+  const data = groupSpendByCategory(txs);
+  const labels = data.map(x=>x[0]);
+  const values = data.map(x=>x[1]);
+
+  const ctx = $('pie');
+  if (pieChart) pieChart.destroy();
+  pieChart = new Chart(ctx, {
+    type: 'pie',
+    data: { labels, datasets: [{ data: values }] },
+    options: { plugins: { legend: { position: 'bottom' } } }
+  });
+}
+
+function renderTxList(txs){
+  txs.sort((a,b)=> (b.date||'').localeCompare(a.date||''));
+  const html = `
+    <table>
+      <thead><tr><th>Date</th><th>Merchant</th><th>Category</th><th>Type</th><th>Amount</th></tr></thead>
+      <tbody>
+        ${txs.slice(0,30).map(t=>`
+          <tr>
+            <td>${t.date}</td>
+            <td>${t.merchant || ''}</td>
+            <td>${t.category}</td>
+            <td>${t.type}</td>
+            <td>${t.type==='expense' ? '-' : '+'}${fmt(t.amount)}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>`;
+  $('txList').innerHTML = html;
+}
+
+async function refreshUI(){
+  const txs = await getAllTx();
+  $('status').textContent = `Saved transactions: ${txs.length} (stored only on this phone)`;
+  renderPie(txs);
+  renderTxList(txs);
+}
+
+// ---------- OCR + parsing ----------
+function parseAmount(s){
+  let t = s.trim().replace(/\$/g,'').replace(/,/g,'');
+  if (t.startsWith('(') && t.endsWith(')')) t = '-' + t.slice(1,-1);
+  const v = Number(t);
+  return Number.isFinite(v) ? v : null;
+}
+
+function normalizeMerchant(s){
+  return s.replace(/\s+/g,' ').trim().slice(0,80);
+}
+
+// Basic statement-like line parser:
+// "MM/DD Merchant -12.34" or "MM/DD/YYYY Merchant 12.34"
+function parseOcrText(text){
+  const lines = text.split('\n').map(l=>l.trim()).filter(Boolean);
+  const out = [];
+  const year = new Date().getFullYear();
+
+  const re = /^(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)\s+(.*?)\s+([-(]?\$?\d[\d,]*\.\d{2}\)?)$/;
+
+  for (const line of lines){
+    const m = line.match(re);
+    if (!m) continue;
+    const dateStr = m[1];
+    const merch = normalizeMerchant(m[2]);
+    const amtRaw = parseAmount(m[3]);
+    if (amtRaw === null) continue;
+
+    // normalize date to YYYY-MM-DD
+    const parts = dateStr.split('/');
+    let mm = parts[0].padStart(2,'0');
+    let dd = parts[1].padStart(2,'0');
+    let yyyy = (parts[2] ? parts[2] : String(year));
+    if (yyyy.length === 2) yyyy = '20' + yyyy;
+
+    const iso = `${yyyy}-${mm}-${dd}`;
+
+    const type = amtRaw < 0 ? 'expense' : 'income';
+    const amt = Math.abs(amtRaw);
+
+    // simple auto-category
+    const cat = (type==='income') ? 'Income' : autoCategory(merch);
+
+    out.push({ date: iso, merchant: merch, amount: amt, type, category: cat });
+  }
+
+  // de-dupe within batch
+  const seen = new Set();
+  return out.filter(r=>{
+    const k = `${r.date}|${r.type}|${r.amount.toFixed(2)}|${r.merchant.toLowerCase()}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+
+function autoCategory(merchant){
+  const m = merchant.toLowerCase();
+  const rules = [
+    [/rent|landlord|property/i, "Rent/Mortgage"],
+    [/pg&e|pge|electric|water|trash|xfinity|comcast|verizon|att/i, "Utilities"],
+    [/safeway|trader joe|whole foods|costco|walmart|kroger/i, "Groceries"],
+    [/doordash|ubereats|grubhub|restaurant|cafe|coffee|starbucks/i, "Dining"],
+    [/chevron|shell|arco|exxon|mobil|76|gas/i, "Gas/Transport"],
+    [/uber|lyft|parking|toll|fastrak|bart|caltrain|muni|vta/i, "Gas/Transport"],
+    [/netflix|spotify|hulu|disney\+|apple\.com\/bill|prime/i, "Subscriptions"],
+    [/amazon|best buy|apple store|nike|adidas/i, "Shopping"],
+    [/movie|cinema|theater|ticketmaster|concert|arcade/i, "Entertainment"],
+    [/airbnb|hotel|hilton|marriott|delta|united|southwest|expedia/i, "Travel"],
+    [/loan|credit card|payment|discover|amex|capital one/i, "Debt"],
+    [/vanguard|fidelity|robinhood|schwab|401k|ira/i, "Savings/Investing"],
+    [/transfer|zelle|venmo|paypal|cash app/i, "Transfer"]
+  ];
+  for (const [re, cat] of rules) if (re.test(m)) return cat;
+  return "Other";
+}
+
+function renderPreview(rows){
+  if (!rows.length){
+    $('preview').innerHTML = `<p>No rows detected. Use a clearer/zoomed screenshot.</p>`;
+    return;
+  }
+  $('preview').innerHTML = `
+    <table>
+      <thead><tr><th>Date</th><th>Merchant</th><th>Category</th><th>Type</th><th>Amount</th></tr></thead>
+      <tbody>
+        ${rows.map(r=>`
+          <tr>
+            <td>${r.date}</td>
+            <td>${r.merchant}</td>
+            <td>${r.category}</td>
+            <td>${r.type}</td>
+            <td>${r.type==='expense' ? '-' : '+'}${fmt(r.amount)}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>`;
+}
+
+// UI wiring
+(async function main(){
+  await initDB();
+  fillCategories();
+  $('date').value = todayISO();
+  $('status').textContent = 'Ready.';
+  await refreshUI();
+
+  $('addBtn').onclick = async () => {
+    const d = $('date').value;
+    const type = $('type').value;
+    const amount = Number($('amount').value);
+    const merchant = $('merchant').value || '';
+    const category = type === 'income' ? 'Income' : $('category').value;
+
+    if (!d || !(amount > 0)) return alert('Enter a valid date and amount.');
+    await addTx({ date: d, type, amount, merchant, category });
+    $('amount').value = '';
+    $('merchant').value = '';
+  };
+
+  $('ocrBtn').onclick = async () => {
+    const file = $('imgInput').files?.[0];
+    if (!file) return alert('Pick an image first.');
+    $('ocrStatus').textContent = 'Running OCR… (this can take a bit)';
+    $('importBtn').disabled = true;
+
+    const result = await Tesseract.recognize(file, 'eng');
+    const text = result.data.text || '';
+    parsedRows = parseOcrText(text);
+
+    renderPreview(parsedRows);
+    $('ocrStatus').textContent = `OCR done. Detected rows: ${parsedRows.length}`;
+    $('importBtn').disabled = parsedRows.length === 0;
+  };
+
+  $('importBtn').onclick = async () => {
+    let added = 0;
+    // very simple dedupe: check existing rows before insert
+    const existing = await getAllTx();
+    const set = new Set(existing.map(t => `${t.date}|${t.type}|${Number(t.amount).toFixed(2)}|${(t.merchant||'').toLowerCase()}`));
+
+    for (const r of parsedRows){
+      const k = `${r.date}|${r.type}|${r.amount.toFixed(2)}|${r.merchant.toLowerCase()}`;
+      if (set.has(k)) continue;
+      await db.add('tx', r);
+      set.add(k);
+      added++;
+    }
+    alert(`Imported ${added} new transactions (duplicates skipped).`);
+    parsedRows = [];
+    $('preview').innerHTML = '';
+    $('importBtn').disabled = true;
+    await refreshUI();
+  };
+})();
