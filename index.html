@@ -15,6 +15,22 @@
     #status { color:#555; }
     table { width:100%; border-collapse: collapse; }
     td, th { padding:8px; border-bottom:1px solid #eee; text-align:left; }
+  
+  /* ...your existing styles... */
+
+  /* ~20% size compared to big charts */
+  .pieWrap {
+    width: 140px;
+    height: 140px;
+  }
+  .pieWrap canvas {
+    width: 140px !important;
+    height: 140px !important;
+  }
+
+  .legendTable { width:100%; border-collapse: collapse; }
+  .legendTable td { padding:6px 8px; border-bottom:1px solid #eee; font-size:14px; }
+  .dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:8px; vertical-align:middle; }
   </style>
 </head>
 <body>
@@ -49,18 +65,41 @@
   </div>
 
   <div class="card">
-  <h3>Spending by Category (Pie)</h3>
-  <canvas id="pieExpenses" height="220"></canvas>
+  <h3>Filters</h3>
+  <div class="row">
+    <label>
+      Month:
+      <input id="monthFilter" type="month" />
+    </label>
+    <label style="display:flex; gap:8px; align-items:center;">
+      <input id="showAll" type="checkbox" />
+      Show all dates
+    </label>
+  </div>
 </div>
 
 <div class="card">
-  <h3>Deposits by Merchant (Pie)</h3>
-  <canvas id="pieDeposits" height="220"></canvas>
+  <h3>Spending by Category</h3>
+  <div class="row" style="align-items:flex-start;">
+    <div class="pieWrap"><canvas id="pieExpenses"></canvas></div>
+    <div id="legendExpenses" style="flex:1; min-width:220px;"></div>
+  </div>
 </div>
 
 <div class="card">
-  <h3>Expenses vs Deposits (Ratio Pie)</h3>
-  <canvas id="pieRatio" height="220"></canvas>
+  <h3>Deposits by Merchant (Top 12)</h3>
+  <div class="row" style="align-items:flex-start;">
+    <div class="pieWrap"><canvas id="pieDeposits"></canvas></div>
+    <div id="legendDeposits" style="flex:1; min-width:220px;"></div>
+  </div>
+</div>
+
+<div class="card">
+  <h3>Expenses vs Deposits (Ratio)</h3>
+  <div class="row" style="align-items:flex-start;">
+    <div class="pieWrap"><canvas id="pieRatio"></canvas></div>
+    <div id="legendRatio" style="flex:1; min-width:220px;"></div>
+  </div>
 </div>
 
   <div class="card">
@@ -70,6 +109,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/idb@8/build/umd.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <script src="app.js"></script>
 </body>
