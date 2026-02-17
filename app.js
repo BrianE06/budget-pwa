@@ -124,20 +124,40 @@ function renderTxList(txs){
   txs.sort((a,b)=> (b.date||'').localeCompare(a.date||''));
   const html = `
     <table>
-      <thead><tr><th>Date</th><th>Merchant</th><th>Category</th><th>Type</th><th>Amount</th></tr></thead>
+      <thead>
+      <tr>
+      <th>Date</th><th>Merchant</th><th>Category</th><th>Type</th><th>Amount</th>
+      </tr>
+      </thead>
       <tbody>
-        ${txs.slice(0,30).map(t=>`
+        ${txs.slice(0,50).map(t=>`
           <tr>
             <td>${t.date}</td>
             <td>${t.merchant || ''}</td>
             <td>${t.category}</td>
             <td>${t.type}</td>
             <td>${t.type==='expense' ? '-' : '+'}${fmt(t.amount)}</td>
+          <td>
+           <button class="delBtn" data-id="${t.id}">Delete</button>
+           </td>
           </tr>
         `).join('')}
       </tbody>
     </table>`;
   $('txList').innerHTML = html;
+  // wire up delete buttons
+  document.querySelectorAll('.delBtn').forEach(btn => {
+    btn.onclick = async () => {
+      const id = Number(btn.dataset.id);
+      if (!Number.isFinite(id)) return;
+
+      const ok = confirm("Delete this transaction?");
+      if (!ok) return;
+
+      await db.delete('tx', id);
+      await refreshUI();
+    };
+  });
 }
 
 async function refreshUI(){
